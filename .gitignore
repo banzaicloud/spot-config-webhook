@@ -8,6 +8,8 @@ anchore-image-validator
 /vendor/
 
 # IDE integration
+.idea
+.editorconfig
 /.idea/*
 !/.idea/copyright/
 !/.idea/*.iml
