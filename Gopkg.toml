@@ -1,0 +1,27 @@
+[prune]
+  go-tests = true
+  unused-packages = true
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/openshift/generic-admission-server"
+
+[[override]]
+  version = "kubernetes-1.11.3"
+  name = "k8s.io/api"
+
+[[override]]
+  version = "kubernetes-1.11.3"
+  name = "k8s.io/apimachinery"
+
+[[override]]
+  version = "kubernetes-1.11.3"
+  name = "k8s.io/apiserver"
+
+[[override]]
+  name = "k8s.io/client-go"
+  version = "kubernetes-1.11.3"
+
+[[constraint]]
+  name = "github.com/sirupsen/logrus"
+  version = "1.0.6"
