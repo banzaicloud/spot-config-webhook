@@ -3,7 +3,7 @@
 # Project variables
 PACKAGE = github.com/banzaicloud/spot-config-webhook
 BINARY_NAME ?= spot-config-webhook
-DOCKER_IMAGE = martonsereg/spot-config-webhook
+DOCKER_IMAGE = banzaicloud/spot-config-webhook
 
 # Build variables
 BUILD_DIR ?= build
