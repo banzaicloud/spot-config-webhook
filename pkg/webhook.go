@@ -76,7 +76,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		}
 	}
 
-	configMap, err := a.clientSet.CoreV1().ConfigMaps("pipeline-infra").Get("spot-deploy-config", metav1.GetOptions{})
+	configMap, err := a.clientSet.CoreV1().ConfigMaps("pipeline-system").Get("spot-deploy-config", metav1.GetOptions{})
 	if err != nil {
 		log.Info("***4*** cm err")
 		return &admissionv1beta1.AdmissionResponse{
