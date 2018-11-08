@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"fmt"
 	"strings"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 type AdmissionHook struct {
@@ -42,74 +43,45 @@ type patchOperation struct {
 
 func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
 
-	log.Info("***1*** hey I'm called")
-
-	var name, releaseName string
+	var resource string
 
 	switch req.Kind.Kind {
 	case "Deployment":
-		log.Info("***2*** deployment")
+		log.Debug("found deployment in request")
 		var deployment appsv1.Deployment
 		if err := json.Unmarshal(req.Object.Raw, &deployment); err != nil {
-			log.Errorf("***err*** Could not unmarshal raw object: %v", err)
-			return &admissionv1beta1.AdmissionResponse{
-				Allowed: true,
-				UID:     req.UID,
-				Result: &metav1.Status{
-					Message: err.Error(),
-				},
-			}
+			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
+			return a.successResponseNoPatch(req.UID, err.Error())
 		}
-		name = deployment.Name
-		if deployment.Labels != nil {
-			releaseName = deployment.Labels["release"]
+		name := deployment.Name
+		if deployment.Labels == nil || deployment.Labels["release"] == "" {
+			log.Warnf("no release label found, resource won't be mutated")
+			return a.successResponseNoPatch(req.UID, "no release label found")
 		}
-		log.Info("***3*** release name", releaseName)
+		releaseName := deployment.Labels["release"]
+		resource = releaseName + "." + strings.ToLower(req.Kind.Kind) + "." + name
 	default:
-		log.Info("***2/b*** valami mas")
-		return &admissionv1beta1.AdmissionResponse{
-			Allowed: true,
-			UID:     req.UID,
-			Result: &metav1.Status{
-				Message: fmt.Sprintf("resource type %s is not applicable for this webhook", req.Kind.Kind),
-			},
-		}
+		return a.successResponseNoPatch(req.UID, fmt.Sprintf("resource type %s is not applicable for this webhook", req.Kind.Kind))
 	}
 
 	configMap, err := a.clientSet.CoreV1().ConfigMaps("pipeline-system").Get("spot-deploy-config", metav1.GetOptions{})
 	if err != nil {
-		log.Info("***4*** cm err")
-		return &admissionv1beta1.AdmissionResponse{
-			Allowed: true,
-			UID:     req.UID,
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
+		log.WithField("resource", resource).Warnf("spot deployment ConfigMap couldn't be retrieved, resource won't be mutated: %v", err)
+		return a.successResponseNoPatch(req.UID, err.Error())
 	}
-
-	log.Info("***4*** cm")
 
 	if configMap.Data == nil {
-		log.Info("***5*** data nil")
-		return &admissionv1beta1.AdmissionResponse{
-			Allowed: true,
-			UID:     req.UID,
-			Result:  &metav1.Status{Status: "Success", Message: "no entry found in configMap"},
-		}
-	}
-	log.Info("***5/b*** data van, kulcs: %s", releaseName+"."+strings.ToLower(req.Kind.Kind)+"."+name)
-	pct, ok := configMap.Data[releaseName+"."+strings.ToLower(req.Kind.Kind)+"."+name]
-	if !ok {
-		log.Info("***6/b*** data van de nem ok")
-		return &admissionv1beta1.AdmissionResponse{
-			Allowed: true,
-			UID:     req.UID,
-			Result:  &metav1.Status{Status: "Success", Message: "no entry found in configMap"},
-		}
+		log.WithField("resource", resource).Warnf("there's no data in spot deploy ConfigMap, resource won't be mutated: %v", err)
+		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
 	}
 
-	log.Info("***6*** CM-ben megvan")
+	pct, ok := configMap.Data[resource]
+	if !ok {
+		log.WithField("resource", resource).Warnf("resource not found in spot deploy ConfigMap, resource won't be mutated: %v", err)
+		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
+	}
+
+	log.WithField("resource", resource).Debug("creating patches")
 
 	var patch []patchOperation
 	patch = append(patch, patchOperation{
@@ -126,21 +98,13 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		Value: "spot-scheduler",
 	})
 
-	log.Info("***7*** patched")
-
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
-		log.Info("***8*** patch hiba")
-		return &admissionv1beta1.AdmissionResponse{
-			Allowed: true,
-			UID:     req.UID,
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
+		log.WithField("resource", resource).Warnf("failed to marshal patch bytes, resource won't be mutated: %v", err)
+		return a.successResponseNoPatch(req.UID, err.Error())
 	}
 
-	log.Info("***8/b*** sending response with peccs")
+	log.WithField("resource", resource).Debug("sending patched response")
 
 	return &admissionv1beta1.AdmissionResponse{
 		Allowed: true,
@@ -156,4 +120,15 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 
 func (a *AdmissionHook) Initialize(kubeClientConfig *rest.Config, stopCh <-chan struct{}) error {
 	return nil
+}
+
+func (a *AdmissionHook) successResponseNoPatch(uid types.UID, message string) *admissionv1beta1.AdmissionResponse {
+	return &admissionv1beta1.AdmissionResponse{
+		Allowed: true,
+		UID:     uid,
+		Result: &metav1.Status{
+			Status:  "Success",
+			Message: message,
+		},
+	}
 }
