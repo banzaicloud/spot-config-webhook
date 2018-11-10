@@ -2,37 +2,69 @@ package pkg
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 
+	log "github.com/sirupsen/logrus"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	log "github.com/sirupsen/logrus"
-	"fmt"
-	"strings"
-	"k8s.io/apimachinery/pkg/types"
+)
+
+const (
+	SpotAnnotationKey      = "spot_annotation_key"
+	SpotApiResourceGroup   = "spot_api_resource_group"
+	SpotApiResourceVersion = "spot_api_resource_version"
+	SpotApiResourceName    = "spot_api_resource_name"
+	SpotConfigMapNamespace = "spot_configmap_namespace"
+	SpotConfigMapName      = "spot_configmap_name"
+	SpotSchedulerName      = "spot_scheduler_name"
 )
 
 type AdmissionHook struct {
-	clientSet   *kubernetes.Clientset
-	initialized bool
+	clientSet         *kubernetes.Clientset
+	resourceGroup     string
+	resourceVersion   string
+	resourceName      string
+	spotAnnotationKey string
+	configMapNs       string
+	configMapName     string
+	schedulerName     string
+	initialized       bool
 }
 
-func NewAdmissionHook(client *kubernetes.Clientset) *AdmissionHook {
+func NewAdmissionHook(client *kubernetes.Clientset, annotationKey, group, version, resourceName, cmNs, cmName, schedulerName string) *AdmissionHook {
+	log.WithField(SpotAnnotationKey, annotationKey).
+		WithField(SpotApiResourceGroup, group).
+		WithField(SpotApiResourceVersion, version).
+		WithField(SpotApiResourceName, resourceName).
+		WithField(SpotConfigMapNamespace, cmNs).
+		WithField(SpotConfigMapName, cmName).
+		WithField(SpotSchedulerName, schedulerName).
+		Infof("admission hook parameters")
 	return &AdmissionHook{
-		clientSet: client,
+		clientSet:         client,
+		resourceGroup:     group,
+		resourceVersion:   version,
+		resourceName:      resourceName,
+		configMapNs:       cmNs,
+		configMapName:     cmName,
+		schedulerName:     schedulerName,
+		spotAnnotationKey: annotationKey,
 	}
 }
 
 func (a *AdmissionHook) MutatingResource() (plural schema.GroupVersionResource, singular string) {
 	return schema.GroupVersionResource{
-		Group:    "admission.banzaicloud.com",
-		Version:  "v1beta1",
-		Resource: "spotschedulings",
+		Group:    a.resourceGroup,
+		Version:  a.resourceVersion,
+		Resource: fmt.Sprintf("%ss", a.resourceName),
 	},
-		"spotscheduling"
+		a.resourceName
 }
 
 type patchOperation struct {
@@ -64,7 +96,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		return a.successResponseNoPatch(req.UID, fmt.Sprintf("resource type %s is not applicable for this webhook", req.Kind.Kind))
 	}
 
-	configMap, err := a.clientSet.CoreV1().ConfigMaps("pipeline-system").Get("spot-deploy-config", metav1.GetOptions{})
+	configMap, err := a.clientSet.CoreV1().ConfigMaps(a.configMapNs).Get(a.configMapName, metav1.GetOptions{})
 	if err != nil {
 		log.WithField("resource", resource).Warnf("spot deployment ConfigMap couldn't be retrieved, resource won't be mutated: %v", err)
 		return a.successResponseNoPatch(req.UID, err.Error())
@@ -88,14 +120,14 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		Op:   "add",
 		Path: "/spec/template/metadata/annotations",
 		Value: map[string]string{
-			"app.banzaicloud.io/odPercentage": pct,
+			a.spotAnnotationKey: pct,
 		},
 	})
 
 	patch = append(patch, patchOperation{
 		Op:    "add",
 		Path:  "/spec/template/spec/schedulerName",
-		Value: "spot-scheduler",
+		Value: a.schedulerName,
 	})
 
 	patchBytes, err := json.Marshal(patch)
@@ -105,6 +137,8 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 	}
 
 	log.WithField("resource", resource).Debug("sending patched response")
+
+	// TODO: delete configmap entry
 
 	return &admissionv1beta1.AdmissionResponse{
 		Allowed: true,
