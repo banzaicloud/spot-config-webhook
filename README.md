@@ -1,6 +1,8 @@
 ![license](http://img.shields.io/badge/license-Apache%20v2-orange.svg)
 # Spot config webhook
 
+> This webhook is part of the [Pipeline](https://github.com/banzaicloud/pipeline) platform. It can be used independently but it was designed to work effectively with Pipeline.
+
 The [Pipeline](https://github.com/banzaicloud/pipeline) platform is using mutating webhooks to set a *custom scheduler* on deployments when the cluster have spot instances and when Pipeline signals that the deployment should have at least some percent of replicas placed on on-demand instances.
 
 When creating a deployment through the Pipeline API or from the UI the user can specify how many percentage of her workload must run on safe, on-demand instances.
