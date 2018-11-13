@@ -75,26 +75,50 @@ type patchOperation struct {
 
 func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admissionv1beta1.AdmissionResponse {
 
-	var resource string
+	var name string
+	var labels map[string]string
+	var podAnnotations map[string]string
 
 	switch req.Kind.Kind {
 	case "Deployment":
-		log.Debug("found deployment in request")
+		log.Debug("found Deployment in request")
 		var deployment appsv1.Deployment
 		if err := json.Unmarshal(req.Object.Raw, &deployment); err != nil {
 			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
 			return a.successResponseNoPatch(req.UID, err.Error())
 		}
-		name := deployment.Name
-		if deployment.Labels == nil || deployment.Labels["release"] == "" {
-			log.Warnf("no release label found, resource won't be mutated")
-			return a.successResponseNoPatch(req.UID, "no release label found")
+		name = deployment.Name
+		labels = deployment.Labels
+		podAnnotations = deployment.Spec.Template.Annotations
+	case "StatefulSet":
+		log.Debug("found StatefulSet in request")
+		var statefulSet appsv1.StatefulSet
+		if err := json.Unmarshal(req.Object.Raw, &statefulSet); err != nil {
+			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
+			return a.successResponseNoPatch(req.UID, err.Error())
 		}
-		releaseName := deployment.Labels["release"]
-		resource = releaseName + "." + strings.ToLower(req.Kind.Kind) + "." + name
+		name = statefulSet.Name
+		labels = statefulSet.Labels
+		podAnnotations = statefulSet.Spec.Template.Annotations
+	case "ReplicaSet":
+		log.Debug("found ReplicaSet in request")
+		var replicaSet appsv1.ReplicaSet
+		if err := json.Unmarshal(req.Object.Raw, &replicaSet); err != nil {
+			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
+			return a.successResponseNoPatch(req.UID, err.Error())
+		}
+		name = replicaSet.Name
+		labels = replicaSet.Labels
+		podAnnotations = replicaSet.Spec.Template.Annotations
 	default:
 		return a.successResponseNoPatch(req.UID, fmt.Sprintf("resource type %s is not applicable for this webhook", req.Kind.Kind))
 	}
+
+	if labels == nil || labels["release"] == "" {
+		log.Warnf("no release label found, resource won't be mutated")
+		return a.successResponseNoPatch(req.UID, "no release label found")
+	}
+	resource := labels["release"] + "." + strings.ToLower(req.Kind.Kind) + "." + name
 
 	configMap, err := a.clientSet.CoreV1().ConfigMaps(a.configMapNs).Get(a.configMapName, metav1.GetOptions{})
 	if err != nil {
@@ -116,13 +140,17 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 	log.WithField("resource", resource).Debug("creating patches")
 
 	var patch []patchOperation
-	patch = append(patch, patchOperation{
-		Op:   "add",
-		Path: "/spec/template/metadata/annotations",
-		Value: map[string]string{
-			a.spotAnnotationKey: pct,
-		},
-	})
+	if v, ok := podAnnotations[a.spotAnnotationKey]; !ok {
+		patch = append(patch, patchOperation{
+			Op:   "add",
+			Path: "/spec/template/metadata/annotations",
+			Value: map[string]string{
+				a.spotAnnotationKey: pct,
+			},
+		})
+	} else {
+		log.WithField("resource", resource).WithField(a.spotAnnotationKey, v).Debug("annotation is already present")
+	}
 
 	patch = append(patch, patchOperation{
 		Op:    "add",
