@@ -115,7 +115,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 	}
 
 	if labels == nil || labels["release"] == "" {
-		log.Warnf("no release label found, resource won't be mutated")
+		log.Warn("no release label found, resource won't be mutated")
 		return a.successResponseNoPatch(req.UID, "no release label found")
 	}
 	resource := labels["release"] + "." + strings.ToLower(req.Kind.Kind) + "." + name
@@ -127,13 +127,13 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 	}
 
 	if configMap.Data == nil {
-		log.WithField("resource", resource).Warnf("there's no data in spot deploy ConfigMap, resource won't be mutated: %v", err)
+		log.WithField("resource", resource).Warn("there's no data in spot deploy ConfigMap, resource won't be mutated")
 		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
 	}
 
 	pct, ok := configMap.Data[resource]
 	if !ok {
-		log.WithField("resource", resource).Warnf("resource not found in spot deploy ConfigMap, resource won't be mutated: %v", err)
+		log.WithField("resource", resource).Warn("resource not found in spot deploy ConfigMap, resource won't be mutated")
 		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
 	}
 
@@ -164,9 +164,9 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		return a.successResponseNoPatch(req.UID, err.Error())
 	}
 
-	log.WithField("resource", resource).Debug("sending patched response")
+	a.cleanupSpotConfigMap(resource)
 
-	// TODO: delete configmap entry
+	log.WithField("resource", resource).Debug("sending patched response")
 
 	return &admissionv1beta1.AdmissionResponse{
 		Allowed: true,
@@ -193,4 +193,24 @@ func (a *AdmissionHook) successResponseNoPatch(uid types.UID, message string) *a
 			Message: message,
 		},
 	}
+}
+
+func (a *AdmissionHook) cleanupSpotConfigMap(resource string) error {
+	cm, err := a.clientSet.CoreV1().ConfigMaps(a.configMapNs).Get(a.configMapName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if cm.Data == nil {
+		return nil
+	}
+	_, ok := cm.Data[resource]
+	if ok {
+		delete(cm.Data, resource)
+	}
+	_, err = a.clientSet.CoreV1().ConfigMaps(a.configMapNs).Update(cm)
+	if err != nil {
+		return err
+	}
+	log.WithField("resource", resource).Debug("deleted entry from ConfigMap")
+	return nil
 }
