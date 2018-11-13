@@ -27,6 +27,8 @@ func main() {
 
 	initConfig()
 
+	log.SetLevel(log.DebugLevel)
+
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		log.Error(err)
