@@ -411,6 +411,14 @@
   version = "v2.0.1"
 
 [[projects]]
+  digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
+
+[[projects]]
   digest = "1:f43f7e80e273179b98af510dd453d184c7860920d6f9aa5c89e06aed0494a7a8"
   name = "github.com/prometheus/client_golang"
   packages = [
@@ -1001,6 +1009,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/openshift/generic-admission-server/pkg/cmd",
+    "github.com/pkg/errors",
     "github.com/sirupsen/logrus",
     "github.com/spf13/viper",
     "k8s.io/api/admission/v1beta1",
