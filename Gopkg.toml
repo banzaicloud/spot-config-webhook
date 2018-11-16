@@ -29,3 +29,7 @@
 [[constraint]]
   name = "github.com/spf13/viper"
   version = "1.2.1"
+
+[[constraint]]
+  name = "github.com/pkg/errors"
+  version = "0.8.0"

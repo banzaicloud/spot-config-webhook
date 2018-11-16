@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -84,8 +85,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		log.Debug("found Deployment in request")
 		var deployment appsv1.Deployment
 		if err := json.Unmarshal(req.Object.Raw, &deployment); err != nil {
-			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
-			return a.successResponseNoPatch(req.UID, err.Error())
+			return a.successResponseNoPatch(req.UID, "", errors.Wrap(err, "could not unmarshal raw object"))
 		}
 		name = deployment.Name
 		labels = deployment.Labels
@@ -94,8 +94,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		log.Debug("found StatefulSet in request")
 		var statefulSet appsv1.StatefulSet
 		if err := json.Unmarshal(req.Object.Raw, &statefulSet); err != nil {
-			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
-			return a.successResponseNoPatch(req.UID, err.Error())
+			return a.successResponseNoPatch(req.UID, "", errors.Wrap(err, "could not unmarshal raw object"))
 		}
 		name = statefulSet.Name
 		labels = statefulSet.Labels
@@ -104,37 +103,32 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 		log.Debug("found ReplicaSet in request")
 		var replicaSet appsv1.ReplicaSet
 		if err := json.Unmarshal(req.Object.Raw, &replicaSet); err != nil {
-			log.Warnf("could not unmarshal raw object, resource won't be mutated: %v", err)
-			return a.successResponseNoPatch(req.UID, err.Error())
+			return a.successResponseNoPatch(req.UID, "", errors.Wrap(err, "could not unmarshal raw object"))
 		}
 		name = replicaSet.Name
 		labels = replicaSet.Labels
 		podAnnotations = replicaSet.Spec.Template.Annotations
 	default:
-		return a.successResponseNoPatch(req.UID, fmt.Sprintf("resource type %s is not applicable for this webhook", req.Kind.Kind))
+		return a.successResponseNoPatch(req.UID, "", errors.Errorf("resource type %s is not applicable for this webhook", req.Kind.Kind))
 	}
 
 	if labels == nil || labels["release"] == "" {
-		log.Warn("no release label found, resource won't be mutated")
-		return a.successResponseNoPatch(req.UID, "no release label found")
+		return a.successResponseNoPatch(req.UID, "", errors.New("no release label found"))
 	}
 	resource := labels["release"] + "." + strings.ToLower(req.Kind.Kind) + "." + name
 
 	configMap, err := a.clientSet.CoreV1().ConfigMaps(a.configMapNs).Get(a.configMapName, metav1.GetOptions{})
 	if err != nil {
-		log.WithField("resource", resource).Warnf("spot deployment ConfigMap couldn't be retrieved, resource won't be mutated: %v", err)
-		return a.successResponseNoPatch(req.UID, err.Error())
+		return a.successResponseNoPatch(req.UID, resource, errors.Wrap(err, "spot deployment ConfigMap couldn't be retrieved"))
 	}
 
 	if configMap.Data == nil {
-		log.WithField("resource", resource).Warn("there's no data in spot deploy ConfigMap, resource won't be mutated")
-		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
+		return a.successResponseNoPatch(req.UID, resource, errors.New("there's no data in spot deploy ConfigMap"))
 	}
 
 	pct, ok := configMap.Data[resource]
 	if !ok {
-		log.WithField("resource", resource).Warn("resource not found in spot deploy ConfigMap, resource won't be mutated")
-		return a.successResponseNoPatch(req.UID, "no entry found in configMap")
+		return a.successResponseNoPatch(req.UID, resource, errors.New("resource not found in spot deploy ConfigMap"))
 	}
 
 	log.WithField("resource", resource).Debug("creating patches")
@@ -160,8 +154,7 @@ func (a *AdmissionHook) Admit(req *admissionv1beta1.AdmissionRequest) *admission
 
 	patchBytes, err := json.Marshal(patch)
 	if err != nil {
-		log.WithField("resource", resource).Warnf("failed to marshal patch bytes, resource won't be mutated: %v", err)
-		return a.successResponseNoPatch(req.UID, err.Error())
+		return a.successResponseNoPatch(req.UID, resource, errors.Wrap(err, "failed to marshal patch bytes"))
 	}
 
 	a.cleanupSpotConfigMap(resource)
@@ -184,13 +177,14 @@ func (a *AdmissionHook) Initialize(kubeClientConfig *rest.Config, stopCh <-chan 
 	return nil
 }
 
-func (a *AdmissionHook) successResponseNoPatch(uid types.UID, message string) *admissionv1beta1.AdmissionResponse {
+func (a *AdmissionHook) successResponseNoPatch(uid types.UID, resource string, err error) *admissionv1beta1.AdmissionResponse {
+	log.WithField("resource", resource).WithError(err).Warn("resource won't be mutated")
 	return &admissionv1beta1.AdmissionResponse{
 		Allowed: true,
 		UID:     uid,
 		Result: &metav1.Status{
 			Status:  "Success",
-			Message: message,
+			Message: err.Error(),
 		},
 	}
 }
