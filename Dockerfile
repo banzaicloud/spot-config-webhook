@@ -18,7 +18,7 @@ FROM alpine:3.7
 
 RUN apk add --update libcap && rm -rf /var/cache/apk/*
 
-COPY --from=builder /tmp/spot-config-webhook /usr/local/bin/anchore-image-validator
+COPY --from=builder /tmp/spot-config-webhook /usr/local/bin/spot-config-webhook
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 ENTRYPOINT ["/usr/local/bin/spot-config-webhook"]
