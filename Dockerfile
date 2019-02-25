@@ -21,8 +21,4 @@ RUN apk add --update libcap && rm -rf /var/cache/apk/*
 COPY --from=builder /tmp/spot-config-webhook /usr/local/bin/anchore-image-validator
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-RUN adduser -D spot-config-webhook
-RUN setcap CAP_NET_BIND_SERVICE=+eip /usr/local/bin/spot-config-webhook
-USER spot-config-webhook
-
 ENTRYPOINT ["/usr/local/bin/spot-config-webhook"]
