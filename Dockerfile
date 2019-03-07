@@ -21,4 +21,6 @@ RUN apk add --update libcap && rm -rf /var/cache/apk/*
 COPY --from=builder /tmp/spot-config-webhook /usr/local/bin/spot-config-webhook
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
+USER nobody
+
 ENTRYPOINT ["/usr/local/bin/spot-config-webhook"]
