@@ -11,8 +11,6 @@ After the API request is sent, Pipeline updates a `ConfigMap` that stores this i
 When the deployment request is sent to the `apiserver`, this webhook intercepts the request, and checks if the deployment is present in the `ConfigMap`.
 If it's found, the webhook mutates the request to include a special annotation that can be parsed by the spot-affinity scheduler, and modifies the `schedulerName` in the pod template `spec`.
 
-![](https://raw.githubusercontent.com/banzaicloud/banzaicloud.github.io/gh-pages/themes/banzai-cloud-v2/static/img/blog/spot-webhook/spot-webhook.png?token=AFuZoD8w8mi9EBmEj6I0BOKgNxYP1x6Iks5cC7AxwA%3D%3D)
-
 ### Deploying the webhook
 
 This webhook is automatically deployed to any cluster started with Pipeline that has spot instances, but it can be deployed independently using the same Helm chart what Pipeline is using.
